@@ -74,7 +74,7 @@ export default {
 				} else if (访问路径 === 'login') {//处理登录页面和登录请求
 					const cookies = request.headers.get('Cookie') || '';
 					const authCookie = cookies.split(';').find(c => c.trim().startsWith(`${AUTH_COOKIE_NAME}=`))?.split('=')[1];
-					if (authCookie && await 验证管理员会话(env, authCookie, 管理员密码, 加密秘钥)) return new Response('重定向中...', { status: 302, headers: { 'Location': '/admin' } });
+					if (authCookie && await validateAdminSession(env, authCookie, 管理员密码, 加密秘钥)) return new Response('重定向中...', { status: 302, headers: { 'Location': '/admin' } });
 					if (request.method === 'POST') {
 						const formData = await request.text();
 						const params = new URLSearchParams(formData);
@@ -93,7 +93,7 @@ export default {
 					const cookies = request.headers.get('Cookie') || '';
 					const authCookie = cookies.split(';').find(c => c.trim().startsWith(`${AUTH_COOKIE_NAME}=`))?.split('=')[1];
 					// 没有cookie或cookie错误，跳转到/login页面
-					if (!authCookie || !await 验证管理员会话(env, authCookie, 管理员密码, 加密秘钥)) return new Response('重定向中...', { status: 302, headers: { 'Location': '/login' } });
+					if (!authCookie || !await validateAdminSession(env, authCookie, 管理员密码, 加密秘钥)) return new Response('重定向中...', { status: 302, headers: { 'Location': '/login' } });
 					if (访问路径 === 'admin/log.json') {// 读取日志内容
 						const 读取日志内容 = await env.KV.get('log.json') || '[]';
 						return new Response(读取日志内容, { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
@@ -209,7 +209,7 @@ export default {
 								// 验证配置完整性
 								if (!newConfig.UUID || !newConfig.HOST) return new Response(JSON.stringify({ error: '配置不完整' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 
-								const normalizedConfig = 规范化配置结构(newConfig, 默认配置JSON);
+								const normalizedConfig = normalizeConfigStructure(newConfig, await createDefaultConfig(config_JSON?.HOST || host, config_JSON?.UUID || userID, config_JSON?.gRPCUserAgent || UA));
 								// 保存到 KV
 								await env.KV.put('config.json', JSON.stringify(normalizedConfig, null, 2));
 								ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Save_Config', config_JSON));
@@ -4681,8 +4681,8 @@ function Surge订阅配置文件热补丁(content, url, config_JSON) {
 async function 请求日志记录(env, request, 访问IP, 请求类型 = "Get_SUB", config_JSON, 是否写入KV日志 = true) {
 	try {
 		const 当前时间 = new Date();
-		const 安全URL = 生成安全请求URL(request.url);
-		const 日志内容 = { TYPE: 请求类型, IP: 访问IP, ASN: `AS${request.cf.asn || '0'} ${request.cf.asOrganization || 'Unknown'}`, CC: `${request.cf.country || 'N/A'} ${request.cf.city || 'N/A'}`, URL: 安全URL, UA: request.headers.get('User-Agent') || 'Unknown', TIME: 当前时间.getTime() };
+		const safeURL = buildSafeRequestURL(request.url);
+		const 日志内容 = { TYPE: 请求类型, IP: 访问IP, ASN: `AS${request.cf.asn || '0'} ${request.cf.asOrganization || 'Unknown'}`, CC: `${request.cf.country || 'N/A'} ${request.cf.city || 'N/A'}`, URL: safeURL, UA: request.headers.get('User-Agent') || 'Unknown', TIME: 当前时间.getTime() };
 		if (config_JSON.TG.启用) {
 			try {
 				const TG_TXT = await env.KV.get('tg.json');
@@ -4745,7 +4745,7 @@ function 掩码敏感信息(文本, 前缀长度 = 3, 后缀长度 = 2) {
 	return `${前缀}${'*'.repeat(星号数量)}${后缀}`;
 }
 
-function 生成安全请求URL(rawUrl) {
+function buildSafeRequestURL(rawUrl) {
 	try {
 		const url = new URL(rawUrl);
 		const sensitiveKeys = new Set(['token', 'password', 'pass', 'pwd', 'apikey', 'api_key', 'api-token', 'apitoken', 'globalapikey', 'authorization', 'auth']);
@@ -4760,7 +4760,7 @@ function 生成安全请求URL(rawUrl) {
 	}
 }
 
-async function 验证管理员会话(env, sessionId, 管理员密码, 加密秘钥) {
+async function validateAdminSession(env, sessionId, 管理员密码, 加密秘钥) {
 	if (!env?.KV || !sessionId) return false;
 	try {
 		const value = await env.KV.get(`${AUTH_SESSION_PREFIX}${sessionId}`);
@@ -4770,53 +4770,53 @@ async function 验证管理员会话(env, sessionId, 管理员密码, 加密秘�
 	}
 }
 
-function 规范化配置结构(config, 默认配置) {
+function normalizeConfigStructure(config, defaultConfig) {
 	const base = {
-		...默认配置,
+		...defaultConfig,
 		...config,
 		反代: {
-			...默认配置.反代,
+			...defaultConfig.反代,
 			...(config?.反代 || {}),
 			SOCKS5: {
-				...默认配置.反代.SOCKS5,
+				...defaultConfig.反代.SOCKS5,
 				...(config?.反代?.SOCKS5 || {}),
 			},
 		},
 		优选订阅生成: {
-			...默认配置.优选订阅生成,
+			...defaultConfig.优选订阅生成,
 			...(config?.优选订阅生成 || {}),
 			本地IP库: {
-				...默认配置.优选订阅生成.本地IP库,
+				...defaultConfig.优选订阅生成.本地IP库,
 				...(config?.优选订阅生成?.本地IP库 || {}),
 			},
 		},
 		订阅转换配置: {
-			...默认配置.订阅转换配置,
+			...defaultConfig.订阅转换配置,
 			...(config?.订阅转换配置 || {}),
 		},
 		TG: {
-			...默认配置.TG,
+			...defaultConfig.TG,
 			...(config?.TG || {}),
 		},
 		CF: {
-			...默认配置.CF,
+			...defaultConfig.CF,
 			...(config?.CF || {}),
 			Usage: {
-				...默认配置.CF.Usage,
+				...defaultConfig.CF.Usage,
 				...(config?.CF?.Usage || {}),
 			},
 		},
 		SS: {
-			...默认配置.SS,
+			...defaultConfig.SS,
 			...(config?.SS || {}),
 		},
 		ECHConfig: {
-			...默认配置.ECHConfig,
+			...defaultConfig.ECHConfig,
 			...(config?.ECHConfig || {}),
 		},
 	};
 	base.反代.路径模板 = {
-		...默认配置.反代.路径模板,
+		...defaultConfig.反代.路径模板,
 		...(config?.反代?.路径模板 || {}),
 	};
 	if (!Array.isArray(base.HOSTS)) base.HOSTS = [base.HOST || ''];
@@ -4824,6 +4824,107 @@ function 规范化配置结构(config, 默认配置) {
 	if (!base.TG) base.TG = { 启用: false, BotToken: null, ChatID: null };
 	if (!base.CF?.Usage) base.CF.Usage = { success: false, pages: 0, workers: 0, total: 0, max: 100000 };
 	return base;
+}
+
+async function createDefaultConfig(hostname, userID, userAgent = 'Mozilla/5.0') {
+	const proxyKey = 查杀特征码;
+	const host = hostname;
+	const alidnsDoH = "https://dns.alidns.com/dns-query";
+	const echSni = "cloudflare-ech.com";
+	const placeholder = '{{IP:PORT}}';
+	return {
+		TIME: new Date().toISOString(),
+		HOST: host,
+		HOSTS: [hostname],
+		UUID: userID,
+		PATH: "/",
+		协议类型: "v" + "le" + "ss",
+		传输协议: "ws",
+		gRPC模式: "gun",
+		gRPCUserAgent: userAgent,
+		跳过证书验证: false,
+		启用0RTT: false,
+		TLS分片: null,
+		随机路径: false,
+		ECH: false,
+		ECHConfig: {
+			DNS: alidnsDoH,
+			SNI: echSni,
+		},
+		SS: {
+			加密方式: "aes-128-gcm",
+			TLS: true,
+		},
+		Fingerprint: "chrome",
+		优选订阅生成: {
+			local: true,
+			本地IP库: {
+				随机IP: true,
+				随机数量: 16,
+				指定端口: -1,
+			},
+			SUB: null,
+			SUBNAME: "edge" + "tunnel",
+			SUBUpdateTime: 3,
+			TOKEN: await MD5MD5(hostname + userID),
+		},
+		订阅转换配置: {
+			SUBAPI: "https://SUBAPI.cmliussss.net",
+			SUBCONFIG: "https://raw.githubusercontent.com/cmliu/ACL4SSR/refs/heads/main/Clash/config/ACL4SSR_Online_Mini_MultiMode_CF.ini",
+			SUBEMOJI: false,
+		},
+		反代: {
+			[proxyKey]: "auto",
+			SOCKS5: {
+				启用: 启用SOCKS5反代,
+				全局: 启用SOCKS5全局反代,
+				账号: 我的SOCKS5账号,
+				白名单: SOCKS5白名单,
+			},
+			路径模板: {
+				[proxyKey]: "proxyip=" + placeholder,
+				SOCKS5: {
+					全局: "socks5://" + placeholder,
+					标准: "socks5=" + placeholder
+				},
+				HTTP: {
+					全局: "http://" + placeholder,
+					标准: "http=" + placeholder
+				},
+				HTTPS: {
+					全局: "https://" + placeholder,
+					标准: "https=" + placeholder
+				},
+				TURN: {
+					全局: "turn://" + placeholder,
+					标准: "turn=" + placeholder
+				},
+				SSTP: {
+					全局: "sstp://" + placeholder,
+					标准: "sstp=" + placeholder
+				},
+			},
+		},
+		TG: {
+			启用: false,
+			BotToken: null,
+			ChatID: null,
+		},
+		CF: {
+			Email: null,
+			GlobalAPIKey: null,
+			AccountID: null,
+			APIToken: null,
+			UsageAPI: null,
+			Usage: {
+				success: false,
+				pages: 0,
+				workers: 0,
+				total: 0,
+				max: 100000,
+			},
+		}
+	};
 }
 
 async function MD5MD5(文本) {
@@ -4989,12 +5090,12 @@ async function DoH查询(域名, 记录类型, DoH解析服务 = "https://cloudf
 		const 耗时 = (performance.now() - 开始时间).toFixed(2);
 		console.error(`[DoH查询] 查询失败 ${域名} ${记录类型} via ${DoH解析服务} ${耗时}ms:`, error);
 		return [];
-	}
+	};
 }
 
 async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重置配置 = false) {
 	const _p = 查杀特征码;
-	const host = hostname, Ali_DoH = "https://dns.alidns.com/dns-query", ECH_SNI = "cloudflare-ech.com", 占位符 = '{{IP:PORT}}', 初始化开始时间 = performance.now(), 默认配置JSON = {
+	const host = hostname, Ali_DoH = "https://dns.alidns.com/dns-query", ECH_SNI = "cloudflare-ech.com", 占位符 = '{{IP:PORT}}', 初始化开始时间 = performance.now(), defaultConfig = {
 		TIME: new Date().toISOString(),
 		HOST: host,
 		HOSTS: [hostname],
@@ -5091,17 +5192,17 @@ async function 读取config_JSON(env, hostname, userID, UA = "Mozilla/5.0", 重�
 	try {
 		let configJSON = await env.KV.get('config.json');
 		if (!configJSON || 重置配置 == true) {
-			await env.KV.put('config.json', JSON.stringify(默认配置JSON, null, 2));
-			config_JSON = 默认配置JSON;
+			await env.KV.put('config.json', JSON.stringify(defaultConfig, null, 2));
+			config_JSON = defaultConfig;
 		} else {
 			config_JSON = JSON.parse(configJSON);
 		}
 	} catch (error) {
 		console.error(`读取config_JSON出错: ${error.message}`);
-		config_JSON = 默认配置JSON;
+		config_JSON = defaultConfig;
 	}
 
-	config_JSON = 规范化配置结构(config_JSON, 默认配置JSON);
+	config_JSON = normalizeConfigStructure(config_JSON, defaultConfig);
 
 	if (!config_JSON.gRPCUserAgent) config_JSON.gRPCUserAgent = UA;
 	config_JSON.HOST = host;
