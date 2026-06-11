@@ -2,7 +2,6 @@
 let config_JSON, 反代IP = '', 启用SOCKS5反代 = null, 启用SOCKS5全局反代 = false, 我的SOCKS5账号 = '', parsedSocks5Address = {};
 let 缓存SOCKS5白名单 = null, 缓存反代IP, 缓存反代解析数组, 缓存反代数组索引 = 0, 启用反代兜底 = true, 调试日志打印 = false;
 let SOCKS5白名单 = ['*tapecontent.net', '*cloudatacdn.com', '*loadshare.org', '*cdn-centaurus.com', 'scholar.google.com'];
-const Pages静态页面 = 'https://edt-pages.github.io';
 const AUTH_COOKIE_NAME = 'auth';
 const AUTH_SESSION_PREFIX = 'auth:';
 ///////////////////////////////////////////////////////全局常量和工具函数///////////////////////////////////////////////
@@ -64,17 +63,17 @@ export default {
 			return await 处理XHTTP请求(request, userID);
 		} else {
 			if (url.protocol === 'http:') return Response.redirect(url.href.replace(`http://${url.hostname}`, `https://${url.hostname}`), 301);
-			if (!管理员密码) return fetch(Pages静态页面 + '/noADMIN').then(r => { const headers = new Headers(r.headers); headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate'); headers.set('Pragma', 'no-cache'); headers.set('Expires', '0'); return new Response(r.body, { status: 404, statusText: r.statusText, headers }) });
+			if (!管理员密码) return renderInlineErrorPage('رمز عبور مدیر تنظیم نشده است', 404);
 			if (env.KV && typeof env.KV.get === 'function') {
 				const 区分大小写访问路径 = url.pathname.slice(1);
 				if (区分大小写访问路径 === 加密秘钥 && 加密秘钥 !== '勿动此默认密钥，有需求请自行通过添加变量KEY进行修改') {//快速订阅
 					const params = new URLSearchParams(url.search);
 					params.set('token', await MD5MD5(host + userID));
-					return new Response('重定向中...', { status: 302, headers: { 'Location': `/sub?${params.toString()}` } });
+					return new Response('در حال هدایت...', { status: 302, headers: { 'Location': `/sub?${params.toString()}` } });
 				} else if (访问路径 === 'login') {//处理登录页面和登录请求
 					const cookies = request.headers.get('Cookie') || '';
 					const authCookie = cookies.split(';').find(c => c.trim().startsWith(`${AUTH_COOKIE_NAME}=`))?.split('=')[1];
-					if (authCookie && await validateAdminSession(env, authCookie, 管理员密码, 加密秘钥)) return new Response('重定向中...', { status: 302, headers: { 'Location': '/admin' } });
+					if (authCookie && await validateAdminSession(env, authCookie, 管理员密码, 加密秘钥)) return new Response('در حال هدایت...', { status: 302, headers: { 'Location': '/admin' } });
 					if (request.method === 'POST') {
 						const formData = await request.text();
 						const params = new URLSearchParams(formData);
@@ -83,17 +82,17 @@ export default {
 							// 密码正确，设置cookie并返回成功标记
 							const sessionId = crypto.randomUUID();
 							await env.KV.put(`${AUTH_SESSION_PREFIX}${sessionId}`, await MD5MD5(String(管理员密码) + 加密秘钥), { expirationTtl: 86400 });
-							const 响应 = new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+							const 响应 = new Response(JSON.stringify({ success: true, message: 'ورود موفق بود' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 							响应.headers.set('Set-Cookie', `${AUTH_COOKIE_NAME}=${sessionId}; Path=/; Max-Age=86400; HttpOnly; Secure; SameSite=Strict`);
 							return 响应;
 						}
 					}
-					return fetch(Pages静态页面 + '/login');
+					return renderLoginPage();
 				} else if (访问路径 === 'admin' || 访问路径.startsWith('admin/')) {//验证cookie后响应管理页面
 					const cookies = request.headers.get('Cookie') || '';
 					const authCookie = cookies.split(';').find(c => c.trim().startsWith(`${AUTH_COOKIE_NAME}=`))?.split('=')[1];
 					// 没有cookie或cookie错误，跳转到/login页面
-					if (!authCookie || !await validateAdminSession(env, authCookie, 管理员密码, 加密秘钥)) return new Response('重定向中...', { status: 302, headers: { 'Location': '/login' } });
+					if (!authCookie || !await validateAdminSession(env, authCookie, 管理员密码, 加密秘钥)) return new Response('در حال هدایت...', { status: 302, headers: { 'Location': '/login' } });
 					if (访问路径 === 'admin/log.json') {// 读取日志内容
 						const 读取日志内容 = await env.KV.get('log.json') || '[]';
 						return new Response(读取日志内容, { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
@@ -102,7 +101,7 @@ export default {
 							const Usage_JSON = await getCloudflareUsage(url.searchParams.get('Email'), url.searchParams.get('GlobalAPIKey'), url.searchParams.get('AccountID'), url.searchParams.get('APIToken'));
 							return new Response(JSON.stringify(Usage_JSON, null, 2), { status: 200, headers: { 'Content-Type': 'application/json' } });
 						} catch (err) {
-							const errorResponse = { msg: '查询请求量失败，失败原因：' + err.message, error: err.message };
+							const errorResponse = { msg: 'دریافت میزان مصرف Cloudflare ناموفق بود: ' + err.message, error: err.message };
 							return new Response(JSON.stringify(errorResponse, null, 2), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 						}
 					} else if (区分大小写访问路径 === 'admin/getADDAPI') {// 验证优选API
@@ -115,14 +114,14 @@ export default {
 								优选API的IP = 优选API的IP.map(item => item.replace(/#(.+)$/, (_, remark) => '#' + decodeURIComponent(remark)));
 								return new Response(JSON.stringify({ success: true, data: 优选API的IP }, null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 							} catch (err) {
-								const errorResponse = { msg: '验证优选API失败，失败原因：' + err.message, error: err.message };
+								const errorResponse = { msg: 'اعتبارسنجی API بهینه‌سازی ناموفق بود: ' + err.message, error: err.message };
 								return new Response(JSON.stringify(errorResponse, null, 2), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 							}
 						}
 						return new Response(JSON.stringify({ success: false, data: [] }, null, 2), { status: 403, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 					} else if (访问路径 === 'admin/check') {// 代理检查
 						const 代理协议 = ['socks5', 'http', 'https', 'turn', 'sstp'].find(类型 => url.searchParams.has(类型)) || null;
-						if (!代理协议) return new Response(JSON.stringify({ error: '缺少代理参数' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+						if (!代理协议) return new Response(JSON.stringify({ error: 'پارامتر پراکسی مشخص نشده است' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 						const 代理参数 = url.searchParams.get(代理协议);
 						const startTime = Date.now();
 						let 检测代理响应;
@@ -199,7 +198,7 @@ export default {
 							config_JSON.init = '配置已重置为默认值';
 							return new Response(JSON.stringify(config_JSON, null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 						} catch (err) {
-							const errorResponse = { msg: '配置重置失败，失败原因：' + err.message, error: err.message };
+							const errorResponse = { msg: 'بازنشانی تنظیمات ناموفق بود: ' + err.message, error: err.message };
 							return new Response(JSON.stringify(errorResponse, null, 2), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 						}
 					} else if (request.method === 'POST') {// 处理 KV 操作（POST 请求）
@@ -207,7 +206,7 @@ export default {
 							try {
 								const newConfig = await request.json();
 								// 验证配置完整性
-								if (!newConfig.UUID || !newConfig.HOST) return new Response(JSON.stringify({ error: '配置不完整' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+								if (!newConfig.UUID || !newConfig.HOST) return new Response(JSON.stringify({ error: 'تنظیمات ناقص است' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 
 								const normalizedConfig = normalizeConfigStructure(newConfig, await createDefaultConfig(config_JSON?.HOST || host, config_JSON?.UUID || userID, config_JSON?.gRPCUserAgent || UA));
 								// 保存到 KV
@@ -215,8 +214,8 @@ export default {
 								ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Save_Config', config_JSON));
 								return new Response(JSON.stringify({ success: true, message: '配置已保存' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 							} catch (error) {
-								console.error('保存配置失败:', error);
-								return new Response(JSON.stringify({ error: '保存配置失败: ' + error.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+								console.error('Save config failed:', error);
+								return new Response(JSON.stringify({ error: 'ذخیره تنظیمات ناموفق بود: ' + error.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 							}
 						} else if (访问路径 === 'admin/cf.json') { // 保存cf.json配置
 							try {
@@ -232,7 +231,7 @@ export default {
 									} else if (newConfig.UsageAPI) {
 										CF_JSON.UsageAPI = newConfig.UsageAPI;
 									} else {
-										return new Response(JSON.stringify({ error: '配置不完整' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+										return new Response(JSON.stringify({ error: 'تنظیمات ناقص است' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 									}
 								}
 
@@ -241,8 +240,8 @@ export default {
 								ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Save_Config', config_JSON));
 								return new Response(JSON.stringify({ success: true, message: '配置已保存' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 							} catch (error) {
-								console.error('保存配置失败:', error);
-								return new Response(JSON.stringify({ error: '保存配置失败: ' + error.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+								console.error('Save CF config failed:', error);
+								return new Response(JSON.stringify({ error: 'ذخیره تنظیمات Cloudflare ناموفق بود: ' + error.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 							}
 						} else if (访问路径 === 'admin/tg.json') { // 保存tg.json配置
 							try {
@@ -251,14 +250,14 @@ export default {
 									const TG_JSON = { BotToken: null, ChatID: null };
 									await env.KV.put('tg.json', JSON.stringify(TG_JSON, null, 2));
 								} else {
-									if (!newConfig.BotToken || !newConfig.ChatID) return new Response(JSON.stringify({ error: '配置不完整' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+									if (!newConfig.BotToken || !newConfig.ChatID) return new Response(JSON.stringify({ error: 'تنظیمات ناقص است' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 									await env.KV.put('tg.json', JSON.stringify(newConfig, null, 2));
 								}
 								ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Save_Config', config_JSON));
 								return new Response(JSON.stringify({ success: true, message: '配置已保存' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 							} catch (error) {
-								console.error('保存配置失败:', error);
-								return new Response(JSON.stringify({ error: '保存配置失败: ' + error.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+								console.error('Save TG config failed:', error);
+								return new Response(JSON.stringify({ error: 'ذخیره تنظیمات تلگرام ناموفق بود: ' + error.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 							}
 						} else if (区分大小写访问路径 === 'admin/ADD.txt') { // 保存自定义优选IP
 							try {
@@ -267,10 +266,10 @@ export default {
 								ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Save_Custom_IPs', config_JSON));
 								return new Response(JSON.stringify({ success: true, message: '自定义IP已保存' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 							} catch (error) {
-								console.error('保存自定义IP失败:', error);
-								return new Response(JSON.stringify({ error: '保存自定义IP失败: ' + error.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+								console.error('Save custom IPs failed:', error);
+								return new Response(JSON.stringify({ error: 'ذخیره IP سفارشی ناموفق بود: ' + error.message }), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 							}
-						} else return new Response(JSON.stringify({ error: '不支持的POST请求路径' }), { status: 404, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+						} else return new Response(JSON.stringify({ error: 'مسیر POST پشتیبانی نمی‌شود' }), { status: 404, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
 					} else if (访问路径 === 'admin/config.json') {// 处理 admin/config.json 请求，返回JSON
 						return new Response(JSON.stringify(config_JSON, null, 2), { status: 200, headers: { 'Content-Type': 'application/json' } });
 					} else if (区分大小写访问路径 === 'admin/ADD.txt') {// 处理 admin/ADD.txt 请求，返回本地优选IP
@@ -282,14 +281,14 @@ export default {
 					}
 
 					ctx.waitUntil(请求日志记录(env, request, 访问IP, 'Admin_Login', config_JSON));
-					return fetch(Pages静态页面 + '/admin' + url.search);
+					return renderAdminPage(url, config_JSON);
 				} else if (访问路径 === 'logout' || uuidRegex.test(访问路径)) {//清除cookie并跳转到登录页面
 					const cookies = request.headers.get('Cookie') || '';
 					const authCookie = cookies.split(';').find(c => c.trim().startsWith(`${AUTH_COOKIE_NAME}=`))?.split('=')[1];
 					if (authCookie) {
 						try { await env.KV.delete(`${AUTH_SESSION_PREFIX}${authCookie}`) } catch (e) { }
 					}
-					const 响应 = new Response('重定向中...', { status: 302, headers: { 'Location': '/login' } });
+					const 响应 = new Response('در حال هدایت...', { status: 302, headers: { 'Location': '/login' } });
 					响应.headers.set('Set-Cookie', `${AUTH_COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict`);
 					return 响应;
 				} else if (访问路径 === 'sub') {//处理订阅请求
@@ -490,7 +489,7 @@ export default {
 					const authCookie = cookies.split(';').find(c => c.trim().startsWith('auth='))?.split('=')[1];
 					if (authCookie && authCookie == await MD5MD5(UA + 加密秘钥 + 管理员密码)) return fetch(new Request('https://speed.cloudflare.com/locations', { headers: { 'Referer': 'https://speed.cloudflare.com/' } }));
 				} else if (访问路径 === 'robots.txt') return new Response('User-agent: *\nDisallow: /', { status: 200, headers: { 'Content-Type': 'text/plain; charset=UTF-8' } });
-			} else if (!envUUID) return fetch(Pages静态页面 + '/noKV').then(r => { const headers = new Headers(r.headers); headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate'); headers.set('Pragma', 'no-cache'); headers.set('Expires', '0'); return new Response(r.body, { status: 404, statusText: r.statusText, headers }) });
+			} else if (!envUUID) return renderInlineErrorPage('KV binding is not configured', 404);
 		}
 
 		let 伪装页URL = env.URL || 'nginx';
@@ -5973,7 +5972,173 @@ async function 解析地址端口(proxyIP, 目标域名 = 'dash.cloudflare.com',
 		log(`[反代解析] 解析完成 总数: ${缓存反代解析数组.length}个\n${缓存反代解析数组.map(([ip, port], index) => `${index + 1}. ${ip}:${port}`).join('\n')}`);
 		缓存反代IP = proxyIP;
 	} else log(`[反代解析] 读取缓存 总数: ${缓存反代解析数组.length}个\n${缓存反代解析数组.map(([ip, port], index) => `${index + 1}. ${ip}:${port}`).join('\n')}`);
-	return 缓存反代解析数组;
+return 缓存反代解析数组;
+}
+
+function escapeHtml(input = '') {
+	return String(input)
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;');
+}
+
+function renderShellPage(title, body, extraHead = '') {
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>${escapeHtml(title)}</title>
+<style>
+  :root{--bg:#07111f;--panel:#0d1b2a;--panel2:#10243a;--text:#e8eef7;--muted:#9ab0c7;--line:#1d3550;--accent:#66d9ff;--accent2:#7cffa9;--danger:#ff6b6b;--shadow:0 18px 60px rgba(0,0,0,.35)}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:
+    radial-gradient(circle at 10% 10%, rgba(102,217,255,.16), transparent 20%),
+    radial-gradient(circle at 90% 0%, rgba(124,255,169,.10), transparent 22%),
+    radial-gradient(circle at top,#12304d 0%,#07111f 45%,#040a13 100%);color:var(--text);min-height:100vh}
+  .wrap{max-width:1200px;margin:0 auto;padding:24px}
+  .hero{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:24px}
+  .brand{font-size:30px;font-weight:800;letter-spacing:-.03em}
+  .sub{color:var(--muted);margin-top:6px}
+  .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
+  .card{background:linear-gradient(180deg,rgba(16,36,58,.92),rgba(13,27,42,.96));border:1px solid rgba(29,53,80,.75);border-radius:18px;box-shadow:var(--shadow);padding:18px;backdrop-filter:blur(10px);transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
+  .card:hover{transform:translateY(-2px);border-color:rgba(102,217,255,.45);box-shadow:0 22px 70px rgba(0,0,0,.42)}
+  .span-12{grid-column:span 12}.span-8{grid-column:span 8}.span-6{grid-column:span 6}.span-4{grid-column:span 4}
+  @media(max-width:900px){.span-8,.span-6,.span-4{grid-column:span 12}.hero{flex-direction:column}}
+  input,select,textarea,button{width:100%;border-radius:12px;border:1px solid var(--line);background:#07111f;color:var(--text);padding:12px 14px;font:inherit}
+  textarea{min-height:220px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  button{cursor:pointer;background:linear-gradient(135deg,var(--accent),#7a8cff);color:#04111d;font-weight:700;border:none}
+  button.secondary{background:#10243a;color:var(--text);border:1px solid var(--line)}
+  button.danger{background:linear-gradient(135deg,#ff8a8a,var(--danger));color:#220707}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .row > *{flex:1 1 180px}
+  .label{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+  pre{margin:0;white-space:pre-wrap;word-break:break-word;background:#07111f;border:1px solid var(--line);border-radius:14px;padding:14px;max-height:520px;overflow:auto}
+  .pill{display:inline-flex;padding:6px 10px;border-radius:999px;background:#07111f;border:1px solid var(--line);color:var(--muted);font-size:12px}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  .ok{color:var(--accent2)} .err{color:var(--danger)} .muted{color:var(--muted)}
+  textarea:focus,input:focus,button:focus{outline:none;box-shadow:0 0 0 3px rgba(102,217,255,.18)}
+</style>
+${extraHead}
+</head>
+<body><div class="wrap">${body}</div></body></html>`;
+}
+
+function renderInlineErrorPage(message, status = 500) {
+	return new Response(renderShellPage('خطا', `
+		<div class="card span-12">
+			<div class="brand">EdgeTunnel</div>
+			<p class="sub">${escapeHtml(message)}</p>
+		</div>
+	`), { status, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+}
+
+function renderLoginPage() {
+	const body = `
+	<div class="hero">
+		<div>
+			<div class="brand">پنل مدیریت EdgeTunnel</div>
+			<div class="sub">پنل مستقل و داخلی، بدون وابستگی به سرویس خارجی</div>
+		</div>
+		<span class="pill">بدون وابستگی بیرونی</span>
+	</div>
+	<div class="grid">
+		<div class="card span-6">
+			<div class="label">ورود</div>
+			<form id="loginForm">
+				<input id="password" type="password" placeholder="رمز عبور مدیر" autocomplete="current-password" required>
+				<div class="toolbar" style="margin-top:12px">
+					<button type="submit">ورود</button>
+				</div>
+				<div id="loginMsg" class="muted"></div>
+			</form>
+		</div>
+		<div class="card span-6">
+			<div class="label">توضیحات</div>
+			<p class="muted">این پنل مستقیماً از Worker رندر می‌شود.</p>
+			<p class="muted">می‌توانید تنظیمات، لاگ‌ها و اتصال‌ها را بدون وابستگی به Pages مدیریت کنید.</p>
+		</div>
+	</div>
+	<script>
+	const form = document.getElementById('loginForm');
+	form.addEventListener('submit', async (e) => {
+	  e.preventDefault();
+	  const msg = document.getElementById('loginMsg');
+	  msg.textContent = 'در حال ورود...';
+	  const res = await fetch('/login', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ password: document.getElementById('password').value }) });
+	  if (res.ok) location.href = '/admin';
+	  else msg.textContent = 'ورود ناموفق بود';
+	});
+	</script>`;
+	return new Response(renderShellPage('ورود', body), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+}
+
+function renderAdminPage(url, config_JSON) {
+	const initialConfig = escapeHtml(JSON.stringify(config_JSON || {}, null, 2));
+	const body = `
+	<div class="hero">
+		<div>
+			<div class="brand">پنل مدیریت EdgeTunnel</div>
+			<div class="sub">مستقیماً از Worker رندر می‌شود</div>
+		</div>
+		<div class="row" style="max-width:420px">
+			<button class="secondary" onclick="location.reload()">به‌روزرسانی</button>
+			<button class="secondary" onclick="logout()">خروج</button>
+		</div>
+	</div>
+	<div class="grid">
+		<div class="card span-12">
+			<div class="toolbar">
+				<span class="pill">تنظیمات</span><span class="pill">لاگ‌ها</span><span class="pill">Cloudflare</span><span class="pill">تلگرام</span>
+			</div>
+			<div class="row">
+				<button class="secondary" onclick="loadConfig()">بارگذاری تنظیمات</button>
+				<button class="secondary" onclick="loadLogs()">بارگذاری لاگ‌ها</button>
+				<button class="secondary" onclick="loadCf()">بارگذاری CF</button>
+				<button class="secondary" onclick="loadTg()">بارگذاری TG</button>
+			</div>
+		</div>
+		<div class="card span-12">
+			<div class="label">ویرایشگر</div>
+			<textarea id="editor" spellcheck="false">${initialConfig}</textarea>
+			<div class="toolbar" style="margin-top:12px">
+				<button onclick="saveConfig()">ذخیره تنظیمات</button>
+				<button class="secondary" onclick="initConfig()">بازنشانی تنظیمات</button>
+			</div>
+			<div id="status" class="muted"></div>
+		</div>
+		<div class="card span-12">
+			<div class="label">خروجی</div>
+			<pre id="output">آماده است.</pre>
+		</div>
+	</div>
+	<script>
+	const output = document.getElementById('output');
+	const editor = document.getElementById('editor');
+	const statusEl = document.getElementById('status');
+	const setOutput = (data) => output.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+	const setStatus = (text, ok = true) => { statusEl.textContent = text; statusEl.className = ok ? 'ok' : 'err'; };
+	async function api(path, opts = {}) {
+	  const res = await fetch(path, { credentials: 'include', ...opts });
+	  const text = await res.text();
+	  let data = text;
+	  try { data = JSON.parse(text); } catch {}
+	  if (!res.ok) throw new Error(typeof data === 'object' && data?.error ? data.error : text || res.statusText);
+	  return data;
+	}
+	async function loadConfig(){ try { const d = await api('/admin/config.json'); editor.value = JSON.stringify(d, null, 2); setOutput(d); setStatus('تنظیمات بارگذاری شد'); } catch(e){ setStatus(e.message, false); setOutput(e.message); } }
+	async function loadLogs(){ try { const d = await api('/admin/log.json'); setOutput(d); setStatus('لاگ‌ها بارگذاری شد'); } catch(e){ setStatus(e.message, false); setOutput(e.message); } }
+	async function loadCf(){ try { const d = await api('/admin/cf.json'); setOutput(d); setStatus('اطلاعات CF بارگذاری شد'); } catch(e){ setStatus(e.message, false); setOutput(e.message); } }
+	async function loadTg(){ try { const d = await api('/admin/tg.json'); setOutput(d); setStatus('اطلاعات TG بارگذاری شد'); } catch(e){ setStatus(e.message, false); setOutput(e.message); } }
+	async function saveConfig(){ try { const d = JSON.parse(editor.value); const res = await api('/admin/config.json', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(d) }); setStatus(res.message || 'ذخیره شد'); setOutput(res); } catch(e){ setStatus(e.message, false); setOutput(e.message); } }
+	async function initConfig(){ try { const res = await api('/admin/init'); setStatus('تنظیمات بازنشانی شد'); setOutput(res); editor.value = JSON.stringify(res, null, 2); } catch(e){ setStatus(e.message, false); setOutput(e.message); } }
+	function logout(){ location.href = '/logout'; }
+	loadConfig();
+	</script>`;
+	return new Response(renderShellPage('پنل مدیریت', body), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
 }
 
 //////////////////////////////////////////////////////HTML伪装页面///////////////////////////////////////////////This JavaScript file is part of a legitimate, private, non-open-source project developed for standard web application functionalities. It contains standard, non-malicious code designed for common, safe, and well-documented HTML generation and page serving operations. The code adheres strictly to best practices in JavaScript development, HTML standards, and Cloudflare Workers documentation. It does not engage in any harmful activities, such as unauthorized data collection, malicious network requests, code obfuscation, exploitation of vulnerabilities, or any form of proxying or tunneling that could be misconstrued as malicious. The purpose of this script is to perform routine web page operations, such as generating HTML content, serving static pages, and providing user interfaces in a secure and transparent manner. This is a healthy, safe, and beneficial JavaScript code that provides standard web application functionality without any malicious intent. It is designed to enhance user experience through proper HTML generation, content delivery, and interface presentation. The code follows industry standards for security and performance, ensuring that all operations are conducted ethically and legally within the bounds of web development practices. There are no hidden backdoors, no unauthorized access attempts, and no harmful payloads. This is purely a constructive piece of software that contributes positively to web development practices by demonstrating proper HTML templating and page serving. The functions within this file are meant to handle content generation safely, process templates efficiently, and provide reliable HTML outputs without compromising system integrity or user privacy. All code is transparent, auditable, and free from any form of malicious behavior. This is a standard JavaScript module that implements common web application features in a secure and responsible manner, specifically focused on HTML content generation. It does not contain any viruses, malware, or exploitative code. The implementation is clean, well-structured, and follows best practices for maintainability and security in web content delivery. Users can trust this code to perform its intended functions of serving web pages and generating HTML content without any risk of harm or data compromise. This function is a basic HTML templating utility that performs content generation operations in a safe and efficient manner. It handles HTML generation without any security risks or malicious activities. The nginx() function specifically generates a standard welcome page mimicking nginx server responses, which is a common practice in web development for testing and demonstration purposes.
